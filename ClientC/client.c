@@ -8,83 +8,98 @@
 #include <time.h>
 #include <stdlib.h>
 #include "Cuser.h"
-int SendData2Server(User* User2)
+#define max_user 50
+SOCKET creates_sock()
 {
-	User* User = User2;
-	SOCKET client;
-	client = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
+	SOCKET client = socket(AF_INET, SOCK_STREAM, IPPROTO_IP);
 	if (client == INVALID_SOCKET)
 	{
 		printf("Error create socket\n");
 		return;
 	}
+	return client;
+}
+struct sockaddr_in create_server(SOCKET sock)
+{
 	struct sockaddr_in server;
 	server.sin_family = AF_INET;
 	server.sin_port = htons(5510); //the same as in server
 	server.sin_addr.S_un.S_addr = inet_addr("127.0.0.1"); //special look-up address
-	if (connect(client, (struct sockaddr*) & server, sizeof(server)) == SOCKET_ERROR)
+	if (connect(sock, (struct sockaddr*) & server, sizeof(server)) == SOCKET_ERROR)
 	{
 		printf("Can't connect to server\n");
-		closesocket(client);
+		closesocket(sock);
 		return;
 	}
-
-	int ret = send(client,User, sizeof(struct User), 0);
-
-	if (ret == SOCKET_ERROR)
+	return server;
+}
+int SendData2Server(User* User2, struct sockaddr_in server)
+{
+	while (1)
 	{
-		printf("Can't send message\n");
-		closesocket(client);
-		return;
-	}
-	ret = SOCKET_ERROR;
-	while (ret == SOCKET_ERROR)
-	{
+		User* User = User2;
+		int ret;
+		ret = send(User->person, User, sizeof(struct User), 0);
+		if (ret == SOCKET_ERROR)
+		{
+			printf("Can't send message\n");
+			//closesocket(User->person);
+			//return 1;
+		}
+		ret = SOCKET_ERROR;
+			//полчение ответа
+			ret = recv(User->person, User, sizeof(struct User), 0);
+			printf("State%d\n", User->state);
+			//обработка ошибок
+			if (ret == 0 || ret == WSAECONNRESET)
+			{
+				printf("Connection closed\n");
+				//break;
+			}
+			if (ret < 0)
+			{
+				printf("Can't resieve message\n");
+				//closesocket(User->person);
+				//return;
+				continue;
+			}
+			switch (User->state)
+			{
+			case 0:
+			{
 
-		//полчение ответа
-		ret = recv(client, User, sizeof(struct User), 0);
-		printf("State=%d\n", User->state);
-		//обработка ошибок
-		if (ret == 0 || ret == WSAECONNRESET)
-		{
-			printf("Connection closed\n");
-			break;
-		}
-		if (ret < 0)
-		{
-			printf("Can't resieve message\n");
-			closesocket(client);
-			return;
-			continue;
-		}
-		switch (User->state)
-		{
-		case 0:
-		{
-			closesocket(client);
-			return 0;
-		}
-		case 1:
-		{
-			printf("%s\n", User->answer);
-			return User->state;
-		}
-		case 2:
-		{
-			printf("%s\n", User->answer);
-			return User->state;
-		}
-		case 3:
-		{
-			printf("%s\n", User->answer);
-			return User->state;
-		}
-		}
-		//вывод на экран количества полученных байт и сообщение
-		
+				printf("Password incorrect, please try now\n");
+				scanf("%s", User->password);
+				//closesocket(User->person);
+				//return 0;
+				break;
+			}
+			case 1:
+			{
+				
+				printf("%s\n", User->answer);
+				printf("Enter the number with whom you want to talk\n");
+				//return User->state;
+				break;
+			}
+			case 2:
+			{
+				printf("%s\n", User->answer);
+				scanf("%d", &User->number);
+				//return User->state;
+				break;
+			}
+			case 3:
+			{
+				printf("%s", User->answer);
+				gets(User->message);
+				//return User->state;
+				break;
+			}
+			}
+			//вывод на экран количества полученных байт и сообщение
 	}
-
-	closesocket(client);
+	//closesocket(User->person);
 	return 1;
 }
 
@@ -99,28 +114,19 @@ int main()
 	int state = 3;
 	printf("Enter your username:\n");
 	struct User User;
+	struct User* Userptr;
+	Userptr = &User;
 	scanf("%s", User.username);
 	printf("Enter your password:\n");
 	scanf("%s", User.password);
 	User.state = 0;
 	int exit = 1;
+	User.person =creates_sock();
 	while (exit)
 	{
-		User.state = SendData2Server(&User);
-		if (User.state == 0)
-		{
-			printf("Password incorrect, please try now\n");
-			scanf("%s", User.password);
-		}
-		if (User.state == 1)
-		{
-			printf("Enter the number with whom you want to talk\n");
-			
-		}
-		if (User.state==2)
-			scanf("%d", &User.number);
-		if (User.state == 3)
-			scanf("%s", User.chats[User.number].chat[User.chats[User.number].number_msg]);
+		struct sockaddr_in server = create_server(User.person);
+		User.state = SendData2Server(&User,server);
+		
 	}
 	return 0;
 }

@@ -8,8 +8,9 @@
 #include <winsock.h>
 #include <stdio.h>
 #include "Suser.h"
-#define max_user 50
-
+#define max_user 20
+#define max_messages 100
+#define max_user_online 20
 
 pthread_mutex_t mutex;
 int check_user(User User)
@@ -18,10 +19,13 @@ int check_user(User User)
 }
 void* ClientStart(void* param)
 {
+while(1)
+	{
 	Serv* Serv = param;
 	struct User User;
 	int ret;
 	ret = recv(Serv->client, &User, sizeof(User), 0);
+	printf("\n%d\n", User.id);
 	if (!ret || ret == SOCKET_ERROR)
 	{
 		pthread_mutex_lock(&mutex);
@@ -30,6 +34,7 @@ void* ClientStart(void* param)
 		return (void*)1;
 	}
 	pthread_mutex_lock(&mutex);
+	
 	switch (User.state)
 	{
 	case 0:
@@ -55,11 +60,13 @@ void* ClientStart(void* param)
 			strcpy(Serv->users[flag].password, User.password);
 			User.state = 1;
 			Serv->users[flag].state = 1;
-			strcpy(User.answer,"Welcome to our chat");
+			strcpy(User.answer, "Welcome to our chat");
+			Serv->users[flag].person = Serv->client;
 		}
 		else
 		{
-			strcpy(User.answer,"Welcome back");
+			Serv->users[flag].person = Serv->client;
+			strcpy(User.answer, "Welcome back");
 			User.state = 1;
 		}
 
@@ -73,19 +80,18 @@ void* ClientStart(void* param)
 	}
 	case 1:
 	{
-		strcpy(User.answer,"\n");
+		strcpy(User.answer, "");
+
 		for (int i = 0; i < Serv->number_users; i++)
 		{
-			if (User.id!=Serv->users[i].id)
+			if (User.id != Serv->users[i].id)
 			{
-				Serv->users[User.id].chats[i].number_msg=0;
-				User.chats->number_msg = 0;
-				char temp[100*max_user];
+				char temp[100 * max_user];
 				sprintf(temp, "%d%s %s\n", Serv->users[i].id, ". ", Serv->users[i].username);
 				strcat(User.answer, temp);
 			}
 		}
-		if (strcmp(User.answer, "\n")==0)
+		if (strcmp(User.answer, "") == 0)
 			strcpy(User.answer, "You are the only user");
 		User.state = 2;
 		break;
@@ -94,12 +100,34 @@ void* ClientStart(void* param)
 	{
 		if (User.id != User.number && User.number >= 0 && User.number < Serv->number_users)
 		{
-			sprintf(User.answer, "%s %s\n","You are in a chat with", Serv->users[User.number].username);
+			sprintf(User.answer, "%s %s\n", "You are in a chat with", Serv->users[User.number].username);
 			User.state = 3;
-			for (int i = 0; i < User.chats[User.number].number_msg; i++)
+			User.chat_id = -1;
+			for (int i = 0; i < Serv->number_chats; i++)
 			{
-				char temp[100000];
-				sprintf(temp, "%d%s %s %s\n", Serv->users[i].id, ". ", Serv->users[i].username, User.chats[User.number].chat[i]);
+				if ((Serv->chats[i].first_id == User.id && Serv->chats[i].second_id == User.number) || (Serv->chats[i].second_id == User.id && Serv->chats[i].first_id == User.number))
+				{
+					User.chat_id = i;
+					break;
+				}
+			}
+			if (User.chat_id == -1)
+			{
+
+				User.chat_id = Serv->number_chats;
+				Serv->chats[User.chat_id].number_msg = 0;
+				Serv->chats[User.chat_id].first_id = User.id;
+				Serv->chats[User.chat_id].second_id = User.number;
+				struct message* messages = malloc(max_messages * sizeof(Message));
+				Serv->chats[User.chat_id].messages = messages;
+				Serv->number_chats++;
+			}
+			int n = Serv->chats[User.chat_id].number_msg;
+			printf("%d", n);
+			for (int i = 0; i < n; i++)
+			{
+				char temp[2000];
+				sprintf(temp, "%s:\n %s\n", Serv->chats[User.chat_id].messages[i].username, Serv->chats[User.chat_id].messages[i].text);
 				strcat(User.answer, temp);
 			}
 		}
@@ -109,14 +137,30 @@ void* ClientStart(void* param)
 	}
 	case 3:
 	{
-		strcpy(Serv->users[User.id].chats[User.number].chat[Serv->users[User.id].chats[User.number].number_msg], User.chats[User.number].chat[User.chats[User.number].number_msg]);
-		//sprintf(User.chats[User.number].chat[User.chats[User.number].number_msg], "%d%s %s %s\n", Serv->users[i].id, ". ", Serv->users[i].username, User.chats[User.number].chat[i]);
+		strcpy(User.answer, "");
+		strcpy(Serv->chats[User.chat_id].messages[Serv->chats[User.chat_id].number_msg].text, User.message);
+		Serv->chats[User.chat_id].messages[Serv->chats[User.chat_id].number_msg].id = User.id;
+		strcpy(Serv->chats[User.chat_id].messages[Serv->chats[User.chat_id].number_msg].username, User.username);
+		Serv->chats[User.chat_id].number_msg++;
+		strcpy(Serv->users[User.number].answer, User.message);
+		printf("%d %s\n", User.number, Serv->users[User.number].answer);
+		//pthread_mutex_unlock(&mutex);
+		ret = send(Serv->users[User.number].person, &Serv->users[User.number], sizeof(User), 0);
+		//pthread_mutex_lock(&mutex);
+		if (ret == SOCKET_ERROR)
+		{
+			pthread_mutex_lock(&mutex);
+			printf("!!!Error sending data\n");
+			pthread_mutex_unlock(&mutex);
+			return (void*)2;
+		}
+		break;
 	}
 	}
-	printf("%s\n", User.username);
+	printf("State%d\n", User.state);
 	pthread_mutex_unlock(&mutex);
-	
-	ret = send(Serv->client, &User, sizeof(User), 0);
+
+	ret = send(Serv->users[User.id].person, &User, sizeof(User), 0);
 	if (ret == SOCKET_ERROR)
 	{
 		pthread_mutex_lock(&mutex);
@@ -124,17 +168,22 @@ void* ClientStart(void* param)
 		pthread_mutex_unlock(&mutex);
 		return (void*)2;
 	}
+	}
 	return (void*)0;
 }
 
 int CreateServer()
 {
 	struct User User;
+	struct Chat Chat;
 	struct Serv Serv2;
 	struct Serv *Serv;
 	struct User* users = malloc(max_user * sizeof(User));
+	struct Chat* chats = malloc(max_user*max_user * sizeof(Chat));
 	Serv = &Serv2;
 	Serv->users = users;
+	Serv->chats = chats;
+	Serv->number_chats = 0;
 	Serv->number_users = 0;
 	SOCKET server;
 	struct sockaddr_in localaddr, clientaddr;
@@ -161,9 +210,9 @@ int CreateServer()
 	listen(server, max_user);//max_user клиентов в очереди могут стоять
 	pthread_mutex_init(&mutex, NULL);
 	while (1)
-	{
+	{	
 		size = sizeof(clientaddr);
-		Serv->client = accept(server, (struct sockaddr*) & clientaddr, &size);
+		Serv->client= accept(server, (struct sockaddr*) & clientaddr, &size);
 		if (Serv->client == INVALID_SOCKET)
 		{
 			printf("Error accept client\n");
@@ -172,6 +221,8 @@ int CreateServer()
 		pthread_t mythread;
 		int status = pthread_create(&mythread, NULL, ClientStart, (void*)Serv);
 		pthread_detach(mythread);
+		
+		
 	}
 	pthread_mutex_destroy(&mutex);
 	printf("Server is stopped\n");
