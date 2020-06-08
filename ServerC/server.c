@@ -19,22 +19,21 @@ int check_user(User User)
 }
 void* ClientStart(void* param)
 {
-while(1)
+	while(1)
 	{
+	
 	Serv* Serv = param;
 	struct User User;
 	int ret;
 	ret = recv(Serv->client, &User, sizeof(User), 0);
-	printf("\n%d\n", User.id);
+
 	if (!ret || ret == SOCKET_ERROR)
 	{
-		pthread_mutex_lock(&mutex);
 		printf("Error getting data\n");
-		pthread_mutex_unlock(&mutex);
 		return (void*)1;
 	}
 	pthread_mutex_lock(&mutex);
-	
+	//printf("\nID %d\n", User.id);
 	switch (User.state)
 	{
 	case 0:
@@ -60,6 +59,7 @@ while(1)
 			strcpy(Serv->users[flag].password, User.password);
 			User.state = 1;
 			Serv->users[flag].state = 1;
+			printf("User: %s create\n", User.username);
 			strcpy(User.answer, "Welcome to our chat");
 			Serv->users[flag].person = Serv->client;
 		}
@@ -72,7 +72,7 @@ while(1)
 
 		if (strcmp(Serv->users[flag].password, User.password) != 0)
 		{
-
+			strcpy(User.answer,"Password incorrect try now\n");
 			User.state = 0;
 
 		}
@@ -80,20 +80,26 @@ while(1)
 	}
 	case 1:
 	{
-		strcpy(User.answer, "");
-
+		strcpy(User.answer, "Choose a user number\n");
+		int flag = 0;
 		for (int i = 0; i < Serv->number_users; i++)
 		{
 			if (User.id != Serv->users[i].id)
 			{
+				printf("FLag=%d\t",flag);
 				char temp[100 * max_user];
 				sprintf(temp, "%d%s %s\n", Serv->users[i].id, ". ", Serv->users[i].username);
 				strcat(User.answer, temp);
+				flag = 1;
 			}
 		}
-		if (strcmp(User.answer, "") == 0)
-			strcpy(User.answer, "You are the only user");
-		User.state = 2;
+		if (flag == 0)
+			strcpy(User.answer, "You are the only user\n");
+		else
+		{
+			printf("%s", User.answer);
+			User.state = 2;
+		}
 		break;
 	}
 	case 2:
@@ -127,6 +133,7 @@ while(1)
 			for (int i = 0; i < n; i++)
 			{
 				char temp[2000];
+				//printf("%s", Serv->chats[User.chat_id].messages[i].text);
 				sprintf(temp, "%s:\n %s\n", Serv->chats[User.chat_id].messages[i].username, Serv->chats[User.chat_id].messages[i].text);
 				strcat(User.answer, temp);
 			}
@@ -157,10 +164,9 @@ while(1)
 		break;
 	}
 	}
-	printf("State%d\n", User.state);
 	pthread_mutex_unlock(&mutex);
-
 	ret = send(Serv->users[User.id].person, &User, sizeof(User), 0);
+	
 	if (ret == SOCKET_ERROR)
 	{
 		pthread_mutex_lock(&mutex);
@@ -168,7 +174,8 @@ while(1)
 		pthread_mutex_unlock(&mutex);
 		return (void*)2;
 	}
-	}
+	printf("State%d\n", User.state);
+}
 	return (void*)0;
 }
 
@@ -210,7 +217,7 @@ int CreateServer()
 	listen(server, max_user);//max_user клиентов в очереди могут стоять
 	pthread_mutex_init(&mutex, NULL);
 	while (1)
-	{	
+	{
 		size = sizeof(clientaddr);
 		Serv->client= accept(server, (struct sockaddr*) & clientaddr, &size);
 		if (Serv->client == INVALID_SOCKET)
@@ -220,9 +227,8 @@ int CreateServer()
 		}
 		pthread_t mythread;
 		int status = pthread_create(&mythread, NULL, ClientStart, (void*)Serv);
+		//pthread_join(mythread, (void**)NULL);
 		pthread_detach(mythread);
-		
-		
 	}
 	pthread_mutex_destroy(&mutex);
 	printf("Server is stopped\n");

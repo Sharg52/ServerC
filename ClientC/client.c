@@ -1,13 +1,16 @@
 // client.cpp : Этот файл содержит функцию "main". Здесь начинается и заканчивается выполнение программы.
 //
-
-#pragma comment(lib, "ws2_32.lib")
 #define _CRT_SECURE_NO_WARNINGS
+#define HAVE_STRUCT_TIMESPEC
+#include <pthread.h>
+#pragma comment(lib, "ws2_32.lib")
+
 #include <winsock.h>
 #include <stdio.h>
-#include <time.h>
 #include <stdlib.h>
 #include "Cuser.h"
+pthread_mutex_t mutex;
+pthread_t recv_msg, send_msg;
 #define max_user 50
 SOCKET creates_sock()
 {
@@ -33,76 +36,90 @@ struct sockaddr_in create_server(SOCKET sock)
 	}
 	return server;
 }
-int SendData2Server(User* User2, struct sockaddr_in server)
+void* recv_serv(User* User2)//получения сообщения
 {
-	while (1)
-	{
-		User* User = User2;
-		int ret;
-		ret = send(User->person, User, sizeof(struct User), 0);
-		if (ret == SOCKET_ERROR)
+	User* User = User2;
+	int ret = SOCKET_ERROR;
+	//printf("SEERV");
+	while (ret == SOCKET_ERROR)
 		{
-			printf("Can't send message\n");
-			//closesocket(User->person);
-			//return 1;
-		}
-		ret = SOCKET_ERROR;
-			//полчение ответа
+		//printf("TUT\n");
 			ret = recv(User->person, User, sizeof(struct User), 0);
-			printf("State%d\n", User->state);
-			//обработка ошибок
 			if (ret == 0 || ret == WSAECONNRESET)
 			{
+
 				printf("Connection closed\n");
-				//break;
+				break;
 			}
 			if (ret < 0)
 			{
 				printf("Can't resieve message\n");
-				//closesocket(User->person);
-				//return;
 				continue;
 			}
-			switch (User->state)
-			{
+		}
+	
+}
+int send_serv(User* User2)//отправка сообщения
+{
+	User* User = User2;
+		int ret = send(User->person, User, sizeof(struct User), 0);
+		if (ret == SOCKET_ERROR)
+		{
+			printf("Can't send message\n");
+			closesocket(User->person);
+			return -1;
+		}
+		return ret;	
+}
+void* recv_handler(User* User2)//чтение и печать
+{
+	User* User = User2;
+	//struct User* User;
+	
+	while (1)
+	{
+		//printf("rev\n");
+		recv_serv(User);
+		system("cls");
+		printf("%s", User->answer);
+		//send_serv(User);
+		//printf("STATE=%d", User->state);
+	}
+	return User;
+}
+void* send_handler(User* User2)//cканировние и отправка
+{
+	User* User = User2;
+	
+	while (1)
+	{
+		//printf("send\n");
+		send_serv(User);
+		//printf("STATE=%d\n", User->state);
+		switch (User->state)
+		{
 			case 0:
 			{
 
-				printf("Password incorrect, please try now\n");
 				scanf("%s", User->password);
-				//closesocket(User->person);
-				//return 0;
-				break;
-			}
-			case 1:
-			{
-				
-				printf("%s\n", User->answer);
-				printf("Enter the number with whom you want to talk\n");
-				//return User->state;
 				break;
 			}
 			case 2:
 			{
-				printf("%s\n", User->answer);
+			
 				scanf("%d", &User->number);
-				//return User->state;
+		
 				break;
 			}
 			case 3:
 			{
-				printf("%s", User->answer);
-				gets(User->message);
-				//return User->state;
-				break;
+				scanf("%s", User->message);
+				//printf("%s", User->message);
 			}
-			}
-			//вывод на экран количества полученных байт и сообщение
+		}
+		
 	}
-	//closesocket(User->person);
-	return 1;
 }
-
 int main()
 {
 	WSADATA wsd;
@@ -114,20 +131,25 @@ int main()
 	int state = 3;
 	printf("Enter your username:\n");
 	struct User User;
-	struct User* Userptr;
-	Userptr = &User;
 	scanf("%s", User.username);
 	printf("Enter your password:\n");
 	scanf("%s", User.password);
 	User.state = 0;
 	int exit = 1;
-	User.person =creates_sock();
-	while (exit)
-	{
-		struct sockaddr_in server = create_server(User.person);
-		User.state = SendData2Server(&User,server);
-		
-	}
+	User.person = creates_sock();
+	struct sockaddr_in server = create_server(User.person);
+	pthread_mutex_init(&mutex, NULL);
+		if (pthread_create(&send_msg, NULL, send_handler, &User) != 0) 
+		{
+			printf("ERROR: pthread\n");
+			return EXIT_FAILURE;
+		}
+		if (pthread_create(&recv_msg, NULL, recv_handler, &User) != 0)
+		{
+			printf("ERROR: pthread\n");
+		}
+		pthread_join(send_msg, NULL);
+		pthread_join(recv_msg, NULL);
 	return 0;
 }
 
